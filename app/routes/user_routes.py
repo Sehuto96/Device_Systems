@@ -26,3 +26,15 @@ def get_user(user_id: int = Path(..., gt=0, description="ID del usuario")):
         if user["id"] == user_id:
             return user
     raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+@router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user(user: UserCreate):
+    global next_id
+    if any(u["email"] == user.email for u in fake_db):
+        raise HTTPException(status_code=400, detail="Ya existe un usuario con ese correo")
+
+    new_user = user.model_dump()
+    new_user["id"] = next_id
+    fake_db.append(new_user)
+    next_id += 1
+    return new_user

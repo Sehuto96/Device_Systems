@@ -1,5 +1,6 @@
 from enum import Enum
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from typing import Optional
 
 
 class RoleEnum(str, Enum):
@@ -24,3 +25,18 @@ class UserResponse(UserBase):
     """Modelo de salida: lo que ve el cliente."""
     id: int
     model_config = ConfigDict(from_attributes=True)
+    
+class UserUpdate(BaseModel):
+    """Para PUT: reemplazo completo, todos los campos son requeridos."""
+    name: str
+    email: EmailStr
+    role: RoleEnum
+    is_active: bool
+
+
+class UserPatch(BaseModel):
+    """Para PATCH: actualización parcial, todos los campos son opcionales."""
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    role: Optional[RoleEnum] = None
+    is_active: Optional[bool] = None

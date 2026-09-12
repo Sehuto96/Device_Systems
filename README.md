@@ -1,14 +1,16 @@
 # device_systems
 
-API REST desarrollada con **FastAPI** para la gestión de usuarios del sistema `device_systems`. Este proyecto evoluciona una API básica de usuarios (operaciones GET y POST) hacia una API REST completa y profesional, implementando CRUD completo, manejo de errores, validación de datos, documentación automática con Swagger/OpenAPI y reutilización de lógica mediante Dependency Injection.
+API REST desarrollada con **FastAPI** para la gestión de usuarios del sistema `device_systems`. Este proyecto evoluciona desde una API básica en memoria (GET/POST), pasando por un CRUD completo también en memoria, hasta esta versión actual que incorpora **persistencia real de datos mediante SQLAlchemy y una base de datos relacional (SQLite)**.
 
 ## Descripción de la API
 
 `device_systems` expone el recurso `/users`, permitiendo:
 
-- Crear, listar, consultar, actualizar (completa y parcialmente) y eliminar usuarios.
+- Crear, listar, consultar, actualizar (completa y parcialmente) y eliminar usuarios, **almacenados de forma persistente en base de datos**.
 - Filtrar usuarios por rol (`admin`, `support`, `user`) y por estado activo.
+- Ordenar usuarios por nombre o fecha de creación.
 - Validar datos de entrada mediante modelos Pydantic.
+- Aplicar restricciones de integridad a nivel de base de datos (`NOT NULL`, `UNIQUE`) mediante modelos SQLAlchemy.
 - Manejar errores de forma clara y consistente usando `HTTPException`.
 - Documentación automática interactiva vía Swagger UI y ReDoc.
 - Reutilización de lógica común mediante Dependency Injection (`Depends()`).
@@ -19,6 +21,8 @@ API REST desarrollada con **FastAPI** para la gestión de usuarios del sistema `
 |---|---|
 | Python 3.14 | Lenguaje base |
 | FastAPI | Framework principal de la API |
+| SQLAlchemy | ORM para persistencia de datos en base de datos relacional |
+| SQLite | Motor de base de datos relacional (desarrollo) |
 | Pydantic v2 | Validación y serialización de datos |
 | Uvicorn | Servidor ASGI |
 | uv | Gestor de dependencias y entornos virtuales |
@@ -26,34 +30,99 @@ API REST desarrollada con **FastAPI** para la gestión de usuarios del sistema `
 
 ## Estructura del proyecto
 
-El proyecto sigue una separación de responsabilidades por capas:
+El proyecto sigue una separación de responsabilidades por capas, ahora incluyendo la capa de persistencia:
 
 ```
 device_systems/
 ├── app/
-│   ├── main.py                     # Punto de entrada, configuración de FastAPI y middleware
+│   ├── main.py                          # Punto de entrada, configuración de FastAPI, middleware y creación de tablas
+│   ├── database/
+│   │   └── connection.py                # Engine, SessionLocal, Base declarativa y create_tables()
+│   ├── models/
+│   │   └── user_model.py                # Modelo SQLAlchemy: estructura real de la tabla 'users'
 │   ├── routes/
-│   │   └── user_routes.py          # Definición de endpoints del recurso /users
+│   │   └── user_routes.py               # Definición de endpoints del recurso /users
 │   ├── schemas/
-│   │   └── user_schemas.py         # Modelos Pydantic (entrada y salida)
+│   │   └── user_schema.py               # Schemas Pydantic (entrada y salida de la API)
 │   ├── services/
-│   │   └── user_service.py         # Lógica de negocio (búsqueda, creación, actualización, eliminación)
-│   ├── dependencies/
-│   │   └── user_dependencies.py    # Dependencias reutilizables con Depends()
-│   └── data/
-│       └── user_data.py            # Simulación de base de datos en memoria
+│   │   └── user_service.py              # Lógica de negocio y operaciones CRUD contra la base de datos
+│   └── dependencies/
+│       ├── database_dependency.py       # Dependencia get_db(): entrega una sesión de BD por request
+│       └── user_dependencies.py         # Dependencias reutilizables con Depends()
+├── device_systems.db                    # Archivo de base de datos SQLite (generado automáticamente)
 ├── pyproject.toml
 ├── uv.lock
+├── requirements.txt
 └── README.md
 ```
 
+### Captura — Estructura del proyecto
+
+<!-- INSERTAR AQUÍ: /Imagenes/EstructuraProyecto.png -->
+
 **Explicación de las capas:**
 
+- **database**: configura la conexión con la base de datos (`engine`, `SessionLocal`, `Base`) y expone `create_tables()` para generar el esquema al iniciar la aplicación.
+- **models**: define las tablas reales de la base de datos mediante clases SQLAlchemy (`Column`, tipos SQL, constraints). Es la capa de **persistencia**.
+- **schemas**: define la forma de los datos que entran y salen de la API mediante Pydantic. Es la capa de **presentación/validación**, independiente del modelo de base de datos.
 - **routes**: define los endpoints (URLs, métodos HTTP, códigos de estado) y delega la lógica a `services`.
-- **schemas**: define la forma de los datos que entran y salen de la API (validación con Pydantic).
-- **services**: contiene la lógica de negocio, desacoplada de FastAPI, lo que facilita las pruebas y el mantenimiento.
-- **dependencies**: funciones reutilizables inyectadas con `Depends()`, que evitan repetir código de validación en múltiples endpoints.
-- **data**: simula una base de datos en memoria (`fake_db`), reemplazable en el futuro por una base de datos real sin afectar las demás capas.
+- **services**: contiene la lógica de negocio y las consultas SQLAlchemy (crear, buscar, filtrar, actualizar, eliminar), desacoplada de FastAPI.
+- **dependencies**: funciones reutilizables inyectadas con `Depends()` — incluye tanto la sesión de base de datos (`get_db`) como validaciones de negocio (`get_user_or_404`, correo único).
+
+## Modelo SQLAlchemy vs. Schema Pydantic
+
+Uno de los aprendizajes centrales de esta fase es la diferencia entre estos dos conceptos, que cumplen roles distintos y complementarios:
+
+| | **Modelo SQLAlchemy** (`user_model.py`) | **Schema Pydantic** (`user_schema.py`) |
+|---|---|---|
+| Hereda de | `Base` (DeclarativeBase) | `BaseModel` |
+| Representa | Una tabla en la base de datos | La forma de los datos de entrada/salida de la API |
+| Define | Columnas con tipos SQL (`Column`, `Integer`, `String`, `Boolean`, `DateTime`) | Campos con type hints de Python y validaciones (`EmailStr`, `Field`, `Enum`) |
+| Aplica | Constraints de integridad (`nullable=False`, `unique=True`) — la **última línea de defensa**, se cumplen sin importar el origen de los datos | Reglas de negocio de la API (formato de email, longitud mínima, valores permitidos de `role`) — validación **antes** de tocar la base de datos |
+| Se expone al cliente | **No**, es interno | **Sí**, es lo que ve el consumidor de la API |
+| Ejemplo en el proyecto | `User` (una sola clase, representa la tabla `users`) | `UserCreate`, `UserUpdate`, `UserPatch`, `UserResponse` (varios schemas, cada uno para un propósito distinto) |
+
+En la práctica, un mismo dato pasa por ambas capas en cada request: primero Pydantic valida el JSON de entrada (`UserCreate`/`UserUpdate`/`UserPatch`), luego ese dato validado se usa para crear o modificar un objeto `User` de SQLAlchemy, que es lo que finalmente se persiste en `device_systems.db`. Al responder, el objeto `User` se convierte de nuevo a un schema (`UserResponse`) gracias a `model_config = ConfigDict(from_attributes=True)`.
+
+## Persistencia de datos
+
+A diferencia de la versión anterior de `device_systems` (donde los usuarios se almacenaban en una lista de Python que se perdía al reiniciar el servidor), esta versión persiste los datos en un archivo real de base de datos: **`device_systems.db`** (SQLite).
+
+**Configuración de la conexión** (`app/database/connection.py`):
+
+```python
+DATABASE_URL = "sqlite:///./device_systems.db"
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+class Base(DeclarativeBase):
+    pass
+```
+
+Las tablas se crean automáticamente al iniciar la aplicación (mediante el `lifespan` de FastAPI en `main.py`), llamando a `Base.metadata.create_all(bind=engine)`.
+
+**Gestión de sesiones por request** (`app/dependencies/database_dependency.py`):
+
+```python
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+Cada request HTTP obtiene su propia sesión de base de datos mediante `Depends(get_db)`, que se cierra automáticamente al finalizar la petición, evite o no una excepción.
+
+### Captura — Base de datos generada
+
+<!-- INSERTAR AQUÍ: /Imagenes/BaseDatosGenerada.png -->
+*Vista de la tabla `users` desde la extensión SQLite Viewer de VS Code, mostrando los registros persistidos en `device_systems.db`.*
 
 ## Instalación y ejecución
 
@@ -76,6 +145,8 @@ uv sync
 uv run fastapi dev app/main.py
 ```
 
+Al iniciar, la aplicación crea automáticamente el archivo `device_systems.db` y la tabla `users` si no existen.
+
 El servidor quedará disponible en:
 
 - API: `http://127.0.0.1:8000`
@@ -86,13 +157,12 @@ El servidor quedará disponible en:
 
 | Recurso | Método | Ruta | Descripción | Código de éxito |
 |---|---|---|---|---|
-| Usuarios | GET | `/users` | Lista usuarios, con filtros opcionales por `role` e `is_active` | 200 OK |
-| Usuarios | GET | `/users/meta/config` | Retorna configuración general de la API (vía Dependency Injection) | 200 OK |
+| Usuarios | GET | `/users` | Lista usuarios, con filtros opcionales por `role`, `is_active` y ordenamiento por `order_by` | 200 OK |
 | Usuarios | GET | `/users/{user_id}` | Consulta un usuario específico por ID | 200 OK |
-| Usuarios | POST | `/users` | Crea un nuevo usuario | 201 Created |
+| Usuarios | POST | `/users` | Crea un nuevo usuario en la base de datos | 201 Created |
 | Usuarios | PUT | `/users/{user_id}` | Reemplaza completamente los datos de un usuario | 200 OK |
 | Usuarios | PATCH | `/users/{user_id}` | Actualiza parcialmente un usuario | 200 OK |
-| Usuarios | DELETE | `/users/{user_id}` | Elimina un usuario existente | 204 No Content |
+| Usuarios | DELETE | `/users/{user_id}` | Elimina un usuario existente de la base de datos | 204 No Content |
 
 ## Códigos de estado HTTP utilizados
 
@@ -126,7 +196,8 @@ El servidor quedará disponible en:
   "name": "Sebastian Hurtado",
   "email": "sebastian@example.com",
   "role": "admin",
-  "is_active": true
+  "is_active": true,
+  "created_at": "2026-09-12T01:03:28.275492"
 }
 ```
 
@@ -146,7 +217,8 @@ El servidor quedará disponible en:
   "name": "Sebastian Hurtado",
   "email": "sebastian@example.com",
   "role": "support",
-  "is_active": true
+  "is_active": true,
+  "created_at": "2026-09-12T01:03:28.275492"
 }
 ```
 
@@ -184,12 +256,12 @@ El servidor quedará disponible en:
 
 ## Uso de Dependency Injection (`Depends()`)
 
-El proyecto reutiliza lógica común mediante dependencias definidas en `app/dependencies/user_dependencies.py`:
+El proyecto reutiliza lógica común mediante dependencias definidas en `app/dependencies/`:
 
-- **`get_user_or_404`**: busca un usuario por `user_id` (tomado del path) y lanza `404` automáticamente si no existe, antes de que la función del endpoint se ejecute. Se usa en `PUT`, `PATCH` y `DELETE`.
-- **`validate_email_unique_for_create`**: valida que el correo no esté duplicado al crear un usuario (`POST`), recibiendo directamente el body como dependencia.
-- **`validate_email_unique_for_update`**: valida que el correo no esté duplicado al actualizar un usuario (`PUT`). Esta dependencia **depende a su vez de `get_user_or_404`**, formando una cadena de dependencias: FastAPI resuelve primero que el usuario exista, y luego valida el correo, sin duplicar la búsqueda del usuario.
-- **`get_api_settings`**: inyecta metadatos generales de la API (nombre y versión), usada en el endpoint `GET /users/meta/config`.
+- **`get_db`** (`database_dependency.py`): entrega una sesión de base de datos (`Session`) por cada request, y la cierra automáticamente al finalizar mediante `yield`/`finally`.
+- **`get_user_or_404`**: busca un usuario por `user_id` (tomado del path) usando la sesión de base de datos, y lanza `404` automáticamente si no existe. Se usa en `GET` por ID, `PUT`, `PATCH` y `DELETE`.
+- **`validate_email_unique_for_create`**: valida contra la base de datos que el correo no esté duplicado al crear un usuario (`POST`).
+- **`validate_email_unique_for_update`**: valida que el correo no esté duplicado al actualizar un usuario (`PUT`). Esta dependencia **depende a su vez de `get_user_or_404`**, formando una cadena de dependencias: FastAPI resuelve primero que el usuario exista, y luego valida el correo, sin duplicar la búsqueda del usuario en la base de datos.
 
 Este enfoque evita repetir la misma validación en múltiples endpoints, centraliza la lógica y hace el código más mantenible y fácil de probar.
 
@@ -198,10 +270,12 @@ Este enfoque evita repetir la misma validación en múltiples endpoints, central
 La API controla los siguientes escenarios usando `HTTPException`:
 
 - **Usuario no encontrado** → `404 Not Found`, mediante la dependencia `get_user_or_404`.
-- **Correo electrónico duplicado** → `400 Bad Request`, tanto al crear como al actualizar.
+- **Correo electrónico duplicado** → `400 Bad Request`, tanto al crear como al actualizar (validado contra la base de datos).
 - **Rol no permitido** → `422 Unprocessable Entity`, validado automáticamente por Pydantic mediante `RoleEnum` (cualquier valor fuera de `admin`, `support`, `user` es rechazado sin necesidad de código adicional).
 - **Actualización parcial sin datos** → `400 Bad Request`, cuando el body de un `PATCH` llega vacío.
 - **Eliminación de usuario inexistente** → `404 Not Found`, mediante la misma dependencia `get_user_or_404`.
+
+Adicionalmente, el modelo SQLAlchemy aplica sus propias restricciones de integridad (`nullable=False`, `unique=True` en la columna `email`) como última línea de defensa a nivel de base de datos, incluso si algún dato llegara a saltarse la validación de Pydantic.
 
 Todas las respuestas de error siguen el formato estándar de FastAPI:
 
@@ -220,72 +294,85 @@ FastAPI genera documentación interactiva automáticamente a partir de los model
 
 ### Captura — Swagger UI
 
-![Swagger completo](/Imagenes/SwaggerUI.png)
+![Swagger](/Imagenes/Swagger.png)
 
 ### Captura — ReDoc
 
-![Redoc](/Imagenes/Redoc.png)
+![reDoc](/Imagenes/reDoc.png)
 
 ## Evidencia de pruebas funcionales
 
+### POST /users — Crear usuario válido
+
+![UsuarioNuevo](/Imagenes/UsuarioNuevo.png)
+
 ### GET /users — Listar usuarios
 
-![Lista usuarios](/Imagenes/ListaUsuarios.png)
+![ListaUsuarios](/Imagenes/ListaUsuarios.png)
 
 ### GET /users/{user_id} — Consultar usuario por ID
 
-![Busqueda por ID](/Imagenes/BusquedaID.png)
+![UsuarioID](/Imagenes/UsuarioID.png)
 
-### POST /users — Crear usuario
+### GET /users?role=admin — Filtrar usuarios por rol
 
-![Usuarion nuevo](/Imagenes/CreacionUsuario.png)
+![UsuarioRol](/Imagenes/UsuarioRol.png)
+
+### GET /users?is_active=true — Filtrar usuarios activos
+
+![UsuariosActivos](/Imagenes/UsuariosActivos.png)
 
 ### PUT /users/{user_id} — Actualización completa
 
-![Actualizacion usuario completa](/Imagenes/ActualizacionUsuario.png)
+![ActualizacionUsuario](/Imagenes/ActualizacionUsuario.png)
 
 ### PATCH /users/{user_id} — Actualización parcial
 
-![Actualizacion parcial](/Imagenes/ActualizacionParcial.png)
+![ActualizacionParcial](/Imagenes/ActualizacionUsuario.png)
 
 ### DELETE /users/{user_id} — Eliminar usuario
 
-<!-- INSERTAR AQUÍ: captura de la prueba -->
+![UsuarioEliminado](/Imagenes/UsuarioEliminado.png)
 
-### GET /users/meta/config — Configuración vía Dependency Injection
+### Verificación de persistencia — Datos en SQLite Viewer
 
-![Usuario eliminado](/Imagenes/UsuarioEliminado.png)
+![BaseDatos](/Imagenes/BaseDatos.png)
 
 ## Evidencia de errores controlados
 
 ### 404 — Usuario no encontrado
 
-![Usuario no encontrado](/Imagenes/UsuarioNoEncontrado.png)
+![UsuarioNoEncontrado](/Imagenes/UsuarioNoEncontrado.png)
 
 ### 400 — Correo duplicado
 
-![Correo duplicado](/Imagenes/CorreoRepetido.png)
+![CorreoDuplicado](/Imagenes/CorreoRepetido.png)
 
 ### 422 — Rol no permitido / datos inválidos
 
-![Rol no permitido](/Imagenes/RolNoPermitido.png)
+![RolNoPermitido](/Imagenes/RolNoPermitido.png)
 
 ### 400 — PATCH sin datos enviados
 
-![Sin datos enviados](/Imagenes/SinDatos.png)
+![DatosVacios](/Imagenes/DatosVacios.png)
 
 ### 404 — Eliminación de usuario inexistente
 
-![Eliminacion usuario inexistente](/Imagenes/EliminacionUsuarioInexistente.png)
+![EliminacionUsuarioInexistente](/Imagenes/EliminarUsuarioInexistente.png)
+
+## Flujo de trabajo con Git
+
+Esta actividad se desarrolló en la rama `feature-sqlalchemy-crud`, creada a partir de `develop` (donde ya estaba mergeado el CRUD completo en memoria de la actividad anterior). Una vez finalizada y probada, esta rama se integró a `develop` mediante un Pull Request en GitHub, siguiendo el mismo flujo de trabajo por ramas utilizado en fases anteriores del proyecto.
 
 ## Reflexión final
 
+Uno de los aprendizajes más grandes de esta fase fue comprender la diferencia real entre un **modelo SQLAlchemy** y un **schema Pydantic**. Al principio parecía redundante tener dos representaciones distintas del mismo "usuario", pero al implementar el CRUD completo quedó claro el propósito de cada una: el modelo SQLAlchemy define cómo se almacenan los datos y garantiza su integridad a nivel de base de datos (constraints como `unique=True` o `nullable=False`), mientras que los schemas Pydantic controlan qué información entra y sale por la API, con sus propias reglas de negocio (como el `RoleEnum` o el formato de email). Tener ambas capas separadas permitió, por ejemplo, exponer un `UserResponse` con exactamente los campos que quiero mostrar, sin acoplar la respuesta de la API a la estructura interna de la tabla.
 
-Uno de los aprendizajes más grandes fue la separación en capas (`routes`, `schemas`, `services`, `dependencies`, `data`). Al principio, tener toda la lógica dentro de las funciones de las rutas parecía suficiente, pero al ir agregando PUT, PATCH y DELETE me di cuenta de que estaba repitiendo código de validación una y otra vez. Mover la lógica de negocio a `services` y las validaciones reutilizables a `dependencies` no solo hizo el código más corto, sino mucho más fácil de leer y mantener: cada archivo tiene una responsabilidad clara, y si necesito cambiar cómo se valida un correo duplicado, solo lo hago en un lugar.
+La separación en capas (`database`, `models`, `schemas`, `services`, `dependencies`, `routes`) también se sintió más natural en esta fase que en la anterior: al agregar la base de datos, quedó evidente por qué cada capa existe — `services` concentra toda la lógica de consultas SQLAlchemy, `dependencies` reutiliza validaciones como `get_user_or_404` y la gestión de sesiones (`get_db`), y `routes` queda enfocado únicamente en la definición de endpoints y códigos de estado, sin lógica de negocio mezclada.
 
-En cuanto a dificultades técnicas, la más grande no fue de código sino de entorno: tener el proyecto dentro de una carpeta sincronizada por OneDrive me generó errores recurrentes de acceso denegado (`os error 5`) al intentar que `uv` modificara el entorno virtual. Después de varios intentos fallidos, la solución definitiva fue sacar el proyecto por completo de la carpeta sincronizada, lo cual eliminó el problema de raíz. Esto me dejó una lección clara sobre la importancia de mantener los entornos de desarrollo fuera del alcance de servicios de sincronización en la nube, algo que no había considerado antes de enfrentarme al problema.
+En cuanto a la importancia de la persistencia en sí: pasar de una lista de Python en memoria a un archivo real de base de datos (`device_systems.db`) cambia por completo el comportamiento de la API. Antes, cada reinicio del servidor borraba todos los datos; ahora, los usuarios creados sobreviven a reinicios del servidor e incluso a cerrar por completo el entorno de desarrollo, que es justamente el comportamiento que se espera de una API real en producción. Verificar esto directamente en la base de datos (con la extensión SQLite Viewer) fue clave para confirmar que no se trataba solo de respuestas JSON convincentes en Swagger, sino de datos realmente persistidos.
 
-En general, este proyecto me ayudó a entender que una API "que funciona" y una API "bien diseñada" no son lo mismo: la segunda piensa en mantenibilidad, manejo de errores predecible y documentación clara desde el principio.
+Si continuara evolucionando esta API, el siguiente paso lógico sería migrar de SQLite a PostgreSQL para un entorno de producción (cambiando únicamente la `DATABASE_URL`, gracias a que SQLAlchemy abstrae el motor de base de datos), incorporar Alembic para gestionar migraciones de esquema de forma versionada, y agregar autenticación (hash de contraseñas, JWT) para proteger los endpoints de escritura.
 
 ## Autor
 

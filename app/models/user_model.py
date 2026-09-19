@@ -8,6 +8,7 @@ de los datos que entran y salen por la API.
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy.orm import relationship
 
 from app.database.connection import Base
 
@@ -25,3 +26,6 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    
+# Un usuario puede tener muchos préstamos
+    loans = relationship("Loan", back_populates="user")

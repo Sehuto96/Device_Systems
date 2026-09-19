@@ -1,18 +1,24 @@
 # device_systems
 
-API REST desarrollada con **FastAPI** para la gestión de usuarios del sistema `device_systems`. Este proyecto evoluciona desde una API básica en memoria (GET/POST), pasando por un CRUD completo también en memoria, hasta esta versión actual que incorpora **persistencia real de datos mediante SQLAlchemy y una base de datos relacional (SQLite)**.
+API REST desarrollada con **FastAPI** para la gestión de usuarios, dispositivos y préstamos del sistema `device_systems`. Este proyecto evoluciona desde un CRUD básico de usuarios hacia un sistema relacional completo, incorporando **SQLAlchemy** para persistencia, **Alembic** para migraciones versionadas de base de datos, asociaciones entre modelos (`ForeignKey`, `relationship`) y consultas avanzadas con **joins** y filtros combinados.
 
 ## Descripción de la API
 
-`device_systems` expone el recurso `/users`, permitiendo:
+`device_systems` expone tres recursos principales:
 
-- Crear, listar, consultar, actualizar (completa y parcialmente) y eliminar usuarios, **almacenados de forma persistente en base de datos**.
-- Filtrar usuarios por rol (`admin`, `support`, `user`) y por estado activo.
-- Ordenar usuarios por nombre o fecha de creación.
-- Validar datos de entrada mediante modelos Pydantic.
-- Aplicar restricciones de integridad a nivel de base de datos (`NOT NULL`, `UNIQUE`) mediante modelos SQLAlchemy.
-- Manejar errores de forma clara y consistente usando `HTTPException`.
-- Documentación automática interactiva vía Swagger UI y ReDoc.
+- **`/users`** — gestión de usuarios del sistema (crear, listar, consultar, actualizar, eliminar, filtrar por rol y estado).
+- **`/devices`** — gestión de dispositivos tecnológicos disponibles para préstamo (crear, listar, consultar, actualizar, eliminar, filtrar por tipo, marca, disponibilidad y búsqueda de texto).
+- **`/loans`** — gestión de préstamos, asociando un usuario con un dispositivo: creación con validación de disponibilidad, devolución, y consultas con joins que muestran información relacionada de usuario y dispositivo en una sola respuesta.
+
+Características generales:
+
+- Persistencia con **SQLAlchemy** sobre SQLite.
+- Migraciones de base de datos versionadas con **Alembic**.
+- Relaciones **One-to-Many / Many-to-One** entre `User`, `Device` y `Loan`, usando `ForeignKey()` y `relationship()` con `back_populates`.
+- Consultas con `join()`, `and_()`, `ilike()` y filtros opcionales combinados.
+- Validación de datos mediante modelos Pydantic, con ejemplos incluidos en la documentación automática.
+- Manejo de errores claro y consistente usando `HTTPException` (404, 400, 409, 422).
+- Documentación interactiva vía Swagger UI y ReDoc, organizada por tags (`Usuarios`, `Dispositivos`, `Préstamos`).
 - Reutilización de lógica común mediante Dependency Injection (`Depends()`).
 
 ## Tecnologías utilizadas
@@ -21,108 +27,66 @@ API REST desarrollada con **FastAPI** para la gestión de usuarios del sistema `
 |---|---|
 | Python 3.14 | Lenguaje base |
 | FastAPI | Framework principal de la API |
-| SQLAlchemy | ORM para persistencia de datos en base de datos relacional |
-| SQLite | Motor de base de datos relacional (desarrollo) |
+| SQLAlchemy | ORM y acceso a base de datos |
+| Alembic | Migraciones versionadas de base de datos |
 | Pydantic v2 | Validación y serialización de datos |
+| SQLite | Motor de base de datos (desarrollo) |
 | Uvicorn | Servidor ASGI |
 | uv | Gestor de dependencias y entornos virtuales |
 | Swagger UI / ReDoc | Documentación automática |
 
 ## Estructura del proyecto
 
-El proyecto sigue una separación de responsabilidades por capas, ahora incluyendo la capa de persistencia:
+El proyecto sigue una separación de responsabilidades por capas, ampliada para soportar los tres recursos (`users`, `devices`, `loans`) y las migraciones de Alembic:
 
 ```
 device_systems/
 ├── app/
-│   ├── main.py                          # Punto de entrada, configuración de FastAPI, middleware y creación de tablas
+│   ├── main.py                          # Punto de entrada, configuración de FastAPI y middleware
 │   ├── database/
-│   │   └── connection.py                # Engine, SessionLocal, Base declarativa y create_tables()
+│   │   └── connection.py                # Engine, SessionLocal y Base declarativa
 │   ├── models/
-│   │   └── user_model.py                # Modelo SQLAlchemy: estructura real de la tabla 'users'
-│   ├── routes/
-│   │   └── user_routes.py               # Definición de endpoints del recurso /users
+│   │   ├── user_model.py                # Modelo SQLAlchemy de User
+│   │   ├── device_model.py              # Modelo SQLAlchemy de Device
+│   │   └── loan_model.py                # Modelo SQLAlchemy de Loan (con ForeignKey a User y Device)
 │   ├── schemas/
-│   │   └── user_schema.py               # Schemas Pydantic (entrada y salida de la API)
+│   │   ├── user_schema.py               # Modelos Pydantic de User
+│   │   ├── device_schema.py             # Modelos Pydantic de Device
+│   │   └── loan_schema.py               # Modelos Pydantic de Loan (incluye LoanDetailResponse)
 │   ├── services/
-│   │   └── user_service.py              # Lógica de negocio y operaciones CRUD contra la base de datos
+│   │   ├── user_service.py              # Lógica de negocio de usuarios
+│   │   ├── device_service.py            # Lógica de negocio de dispositivos
+│   │   └── loan_service.py              # Lógica de negocio de préstamos, incluyendo joins
+│   ├── routes/
+│   │   ├── user_routes.py               # Endpoints del recurso /users
+│   │   ├── device_routes.py             # Endpoints del recurso /devices
+│   │   └── loan_routes.py               # Endpoints del recurso /loans
 │   └── dependencies/
-│       ├── database_dependency.py       # Dependencia get_db(): entrega una sesión de BD por request
-│       └── user_dependencies.py         # Dependencias reutilizables con Depends()
-├── device_systems.db                    # Archivo de base de datos SQLite (generado automáticamente)
+│       ├── database_dependency.py       # Dependencia get_db()
+│       ├── user_dependencies.py         # Dependencias reutilizables de User
+│       ├── device_dependencies.py       # Dependencias reutilizables de Device
+│       └── loan_dependencies.py         # Dependencias reutilizables de Loan
+├── alembic/
+│   ├── versions/                        # Migraciones generadas
+│   └── env.py                           # Configuración de Alembic (Base.metadata, URL de conexión)
+├── alembic.ini
+├── Imagenes/
+│   ├── ...                              # Evidencias de la actividad anterior (CRUD básico de usuarios)
+│   └── AlembicRelaciones/               # Evidencias de esta actividad (Alembic, relaciones, joins)
 ├── pyproject.toml
 ├── uv.lock
-├── requirements.txt
 └── README.md
 ```
 
-### Captura — Estructura del proyecto
-
-<!-- INSERTAR AQUÍ: /Imagenes/EstructuraProyecto.png -->
-
 **Explicación de las capas:**
 
-- **database**: configura la conexión con la base de datos (`engine`, `SessionLocal`, `Base`) y expone `create_tables()` para generar el esquema al iniciar la aplicación.
-- **models**: define las tablas reales de la base de datos mediante clases SQLAlchemy (`Column`, tipos SQL, constraints). Es la capa de **persistencia**.
-- **schemas**: define la forma de los datos que entran y salen de la API mediante Pydantic. Es la capa de **presentación/validación**, independiente del modelo de base de datos.
-- **routes**: define los endpoints (URLs, métodos HTTP, códigos de estado) y delega la lógica a `services`.
-- **services**: contiene la lógica de negocio y las consultas SQLAlchemy (crear, buscar, filtrar, actualizar, eliminar), desacoplada de FastAPI.
-- **dependencies**: funciones reutilizables inyectadas con `Depends()` — incluye tanto la sesión de base de datos (`get_db`) como validaciones de negocio (`get_user_or_404`, correo único).
-
-## Modelo SQLAlchemy vs. Schema Pydantic
-
-Uno de los aprendizajes centrales de esta fase es la diferencia entre estos dos conceptos, que cumplen roles distintos y complementarios:
-
-| | **Modelo SQLAlchemy** (`user_model.py`) | **Schema Pydantic** (`user_schema.py`) |
-|---|---|---|
-| Hereda de | `Base` (DeclarativeBase) | `BaseModel` |
-| Representa | Una tabla en la base de datos | La forma de los datos de entrada/salida de la API |
-| Define | Columnas con tipos SQL (`Column`, `Integer`, `String`, `Boolean`, `DateTime`) | Campos con type hints de Python y validaciones (`EmailStr`, `Field`, `Enum`) |
-| Aplica | Constraints de integridad (`nullable=False`, `unique=True`) — la **última línea de defensa**, se cumplen sin importar el origen de los datos | Reglas de negocio de la API (formato de email, longitud mínima, valores permitidos de `role`) — validación **antes** de tocar la base de datos |
-| Se expone al cliente | **No**, es interno | **Sí**, es lo que ve el consumidor de la API |
-| Ejemplo en el proyecto | `User` (una sola clase, representa la tabla `users`) | `UserCreate`, `UserUpdate`, `UserPatch`, `UserResponse` (varios schemas, cada uno para un propósito distinto) |
-
-En la práctica, un mismo dato pasa por ambas capas en cada request: primero Pydantic valida el JSON de entrada (`UserCreate`/`UserUpdate`/`UserPatch`), luego ese dato validado se usa para crear o modificar un objeto `User` de SQLAlchemy, que es lo que finalmente se persiste en `device_systems.db`. Al responder, el objeto `User` se convierte de nuevo a un schema (`UserResponse`) gracias a `model_config = ConfigDict(from_attributes=True)`.
-
-## Persistencia de datos
-
-A diferencia de la versión anterior de `device_systems` (donde los usuarios se almacenaban en una lista de Python que se perdía al reiniciar el servidor), esta versión persiste los datos en un archivo real de base de datos: **`device_systems.db`** (SQLite).
-
-**Configuración de la conexión** (`app/database/connection.py`):
-
-```python
-DATABASE_URL = "sqlite:///./device_systems.db"
-
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False},
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-class Base(DeclarativeBase):
-    pass
-```
-
-Las tablas se crean automáticamente al iniciar la aplicación (mediante el `lifespan` de FastAPI en `main.py`), llamando a `Base.metadata.create_all(bind=engine)`.
-
-**Gestión de sesiones por request** (`app/dependencies/database_dependency.py`):
-
-```python
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-```
-
-Cada request HTTP obtiene su propia sesión de base de datos mediante `Depends(get_db)`, que se cierra automáticamente al finalizar la petición, evite o no una excepción.
-
-### Captura — Base de datos generada
-
-<!-- INSERTAR AQUÍ: /Imagenes/BaseDatosGenerada.png -->
-*Vista de la tabla `users` desde la extensión SQLite Viewer de VS Code, mostrando los registros persistidos en `device_systems.db`.*
+- **database**: configura el `engine`, la fábrica de sesiones (`SessionLocal`) y la clase base declarativa (`Base`) de la que heredan todos los modelos.
+- **models**: define la estructura real de las tablas en la base de datos, incluyendo las relaciones (`relationship()`, `ForeignKey()`) entre `User`, `Device` y `Loan`.
+- **schemas**: define la forma de los datos que entran y salen por la API (validación con Pydantic), independiente de la estructura de la base de datos.
+- **services**: contiene la lógica de negocio, desacoplada de FastAPI, incluyendo las consultas con `join()` y filtros combinados.
+- **routes**: define los endpoints (URLs, métodos HTTP, códigos de estado, tags, `response_description`) y delega la lógica a `services`.
+- **dependencies**: funciones reutilizables inyectadas con `Depends()`, que evitan repetir código de validación en múltiples endpoints.
+- **alembic**: contiene el historial versionado de cambios estructurales de la base de datos, permitiendo aplicar o revertir migraciones de forma controlada.
 
 ## Instalación y ejecución
 
@@ -139,13 +103,17 @@ cd device_systems
 uv sync
 ```
 
-### 3. Ejecutar el servidor de desarrollo
+### 3. Aplicar las migraciones de base de datos
+
+```bash
+uv run alembic upgrade head
+```
+
+### 4. Ejecutar el servidor de desarrollo
 
 ```bash
 uv run fastapi dev app/main.py
 ```
-
-Al iniciar, la aplicación crea automáticamente el archivo `device_systems.db` y la tabla `users` si no existen.
 
 El servidor quedará disponible en:
 
@@ -153,39 +121,128 @@ El servidor quedará disponible en:
 - Swagger UI: `http://127.0.0.1:8000/docs`
 - ReDoc: `http://127.0.0.1:8000/redoc`
 
+## Migraciones con Alembic
+
+El proyecto usa Alembic para versionar los cambios estructurales de la base de datos, en vez de depender únicamente de `Base.metadata.create_all()`.
+
+### Comandos principales
+
+**Generar una nueva migración** (detecta automáticamente los cambios entre los modelos SQLAlchemy y el estado actual de la base de datos):
+
+```bash
+uv run alembic revision --autogenerate -m "descripción del cambio"
+```
+
+**Aplicar las migraciones pendientes:**
+
+```bash
+uv run alembic upgrade head
+```
+
+**Consultar el historial de migraciones:**
+
+```bash
+uv run alembic history
+```
+
+### Configuración
+
+Alembic fue configurado en `alembic/env.py` para:
+
+- Reconocer la URL de conexión desde `app/database/connection.py` (`DATABASE_URL`), evitando duplicarla en `alembic.ini`.
+- Usar la metadata de SQLAlchemy (`Base.metadata`) para detectar automáticamente los modelos.
+- Importar explícitamente todos los modelos (`User`, `Device`, `Loan`) para que Alembic los registre antes de comparar el estado de la base de datos.
+
+### Migración inicial de esta fase
+
+La migración `create devices and loans tables` creó las tablas `devices` y `loans`, incluyendo las `ForeignKeyConstraint` de `loans` hacia `users.id` y `devices.id`, sin afectar la tabla `users` ya existente.
+
+**Evidencia — Historial de migraciones:**
+
+![Historial de migraciones con Alembic](/Imagenes/AlembicRelaciones/HistorialAlembic.png)
+
+## Asociaciones entre modelos
+
+Se implementaron relaciones **One-to-Many / Many-to-One** entre los tres modelos, usando `ForeignKey()` a nivel de base de datos y `relationship()` con `back_populates` a nivel de ORM:
+
+- **User → Loan**: un usuario puede tener muchos préstamos (`user.loans`).
+- **Device → Loan**: un dispositivo puede aparecer en muchos préstamos históricos (`device.loans`).
+- **Loan → User / Device**: cada préstamo pertenece a un único usuario y a un único dispositivo (`loan.user`, `loan.device`).
+
+```python
+# En Loan
+user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+device_id = Column(Integer, ForeignKey("devices.id"), nullable=False)
+
+user = relationship("User", back_populates="loans")
+device = relationship("Device", back_populates="loans")
+```
+
+El `ForeignKey` garantiza la **integridad referencial** a nivel de base de datos (no se puede crear un préstamo con un `user_id` o `device_id` inexistente), mientras que `relationship()` permite navegar entre objetos relacionados en Python (por ejemplo, `mi_prestamo.user.name`) sin escribir el JOIN manualmente.
+
+**Evidencia — Estructura de tablas generadas:**
+
+![Estructura de tablas en SQLite](/Imagenes/AlembicRelaciones/VistaColumnasBD.png)
+
 ## Tabla de endpoints
 
-| Recurso | Método | Ruta | Descripción | Código de éxito |
-|---|---|---|---|---|
-| Usuarios | GET | `/users` | Lista usuarios, con filtros opcionales por `role`, `is_active` y ordenamiento por `order_by` | 200 OK |
-| Usuarios | GET | `/users/{user_id}` | Consulta un usuario específico por ID | 200 OK |
-| Usuarios | POST | `/users` | Crea un nuevo usuario en la base de datos | 201 Created |
-| Usuarios | PUT | `/users/{user_id}` | Reemplaza completamente los datos de un usuario | 200 OK |
-| Usuarios | PATCH | `/users/{user_id}` | Actualiza parcialmente un usuario | 200 OK |
-| Usuarios | DELETE | `/users/{user_id}` | Elimina un usuario existente de la base de datos | 204 No Content |
+### Usuarios
+
+| Método | Ruta | Descripción | Código de éxito |
+|---|---|---|---|
+| GET | `/users` | Lista usuarios, con filtros opcionales por `role` e `is_active` | 200 OK |
+| GET | `/users/{user_id}` | Consulta un usuario específico por ID | 200 OK |
+| GET | `/users/{user_id}/loans` | Consulta los préstamos asociados a un usuario | 200 OK |
+| POST | `/users` | Crea un nuevo usuario | 201 Created |
+| PUT | `/users/{user_id}` | Reemplaza completamente los datos de un usuario | 200 OK |
+| PATCH | `/users/{user_id}` | Actualiza parcialmente un usuario | 200 OK |
+| DELETE | `/users/{user_id}` | Elimina un usuario existente | 204 No Content |
+
+### Dispositivos
+
+| Método | Ruta | Descripción | Código de éxito |
+|---|---|---|---|
+| GET | `/devices` | Lista dispositivos, con filtros por `device_type`, `is_available`, `brand` y `search` | 200 OK |
+| GET | `/devices/{device_id}` | Consulta un dispositivo específico por ID | 200 OK |
+| GET | `/devices/{device_id}/loans` | Consulta el historial de préstamos de un dispositivo | 200 OK |
+| POST | `/devices` | Crea un nuevo dispositivo | 201 Created |
+| PUT | `/devices/{device_id}` | Reemplaza completamente los datos de un dispositivo | 200 OK |
+| PATCH | `/devices/{device_id}` | Actualiza parcialmente un dispositivo | 200 OK |
+| DELETE | `/devices/{device_id}` | Elimina un dispositivo existente | 204 No Content |
+
+### Préstamos
+
+| Método | Ruta | Descripción | Código de éxito |
+|---|---|---|---|
+| GET | `/loans` | Lista préstamos, con filtros por `status`, `user_id` y `device_id` | 200 OK |
+| GET | `/loans/details` | Lista préstamos con datos embebidos de usuario y dispositivo (join), con filtros por `status`, `user_email` y `device_type` | 200 OK |
+| GET | `/loans/{loan_id}` | Consulta un préstamo específico por ID | 200 OK |
+| POST | `/loans` | Crea un préstamo, validando usuario, dispositivo y disponibilidad | 201 Created |
+| PATCH | `/loans/{loan_id}/return` | Registra la devolución de un préstamo | 200 OK |
 
 ## Códigos de estado HTTP utilizados
 
 | Código | Significado | Cuándo se retorna |
 |---|---|---|
-| 200 OK | Operación exitosa | GET, PUT, PATCH exitosos |
+| 200 OK | Operación exitosa | GET, PUT, PATCH y devoluciones exitosas |
 | 201 Created | Recurso creado exitosamente | POST exitoso |
 | 204 No Content | Eliminación exitosa, sin cuerpo de respuesta | DELETE exitoso |
-| 400 Bad Request | Solicitud inválida | Correo duplicado, PATCH sin campos enviados |
-| 404 Not Found | Recurso no encontrado | Usuario inexistente en GET, PUT, PATCH o DELETE por ID |
-| 422 Unprocessable Entity | Error de validación de datos | Datos con formato/tipo inválido (por ejemplo, rol fuera del enum permitido) |
+| 400 Bad Request | Solicitud inválida | Correo o número de serie duplicado, PATCH sin campos enviados |
+| 404 Not Found | Recurso no encontrado | Usuario, dispositivo o préstamo inexistente |
+| 409 Conflict | Regla de negocio incumplida | Dispositivo no disponible para préstamo, préstamo ya devuelto |
+| 422 Unprocessable Entity | Error de validación de datos | Datos con formato/tipo inválido (rol, estado o filtro fuera del enum permitido) |
 
 ## Ejemplos de peticiones y respuestas
 
-### Crear usuario — `POST /users`
+### Crear dispositivo — `POST /devices`
 
 **Request:**
 ```json
 {
-  "name": "Sebastian Hurtado",
-  "email": "sebastian@example.com",
-  "role": "admin",
-  "is_active": true
+  "name": "Laptop Lenovo ThinkPad",
+  "serial_number": "LEN-2024-001",
+  "device_type": "laptop",
+  "brand": "Lenovo"
 }
 ```
 
@@ -193,75 +250,103 @@ El servidor quedará disponible en:
 ```json
 {
   "id": 1,
-  "name": "Sebastian Hurtado",
-  "email": "sebastian@example.com",
-  "role": "admin",
-  "is_active": true,
-  "created_at": "2026-09-12T01:03:28.275492"
+  "name": "Laptop Lenovo ThinkPad",
+  "serial_number": "LEN-2024-001",
+  "device_type": "laptop",
+  "brand": "Lenovo",
+  "is_available": true,
+  "created_at": "2026-09-17T00:00:00"
 }
 ```
 
-### Actualización parcial — `PATCH /users/1`
+### Crear préstamo — `POST /loans`
 
 **Request:**
 ```json
 {
-  "role": "support"
+  "user_id": 4,
+  "device_id": 1
 }
 ```
+
+**Response — 201 Created:**
+```json
+{
+  "id": 2,
+  "user_id": 4,
+  "device_id": 1,
+  "loan_date": "2026-09-17T00:31:22.446763",
+  "return_date": null,
+  "status": "active"
+}
+```
+
+### Dispositivo no disponible — `POST /loans`
+
+**Response — 409 Conflict:**
+```json
+{
+  "detail": "El dispositivo no está disponible para préstamo"
+}
+```
+
+### Devolución de préstamo — `PATCH /loans/{loan_id}/return`
 
 **Response — 200 OK:**
 ```json
 {
-  "id": 1,
-  "name": "Sebastian Hurtado",
-  "email": "sebastian@example.com",
-  "role": "support",
-  "is_active": true,
-  "created_at": "2026-09-12T01:03:28.275492"
+  "id": 2,
+  "user_id": 4,
+  "device_id": 1,
+  "loan_date": "2026-09-17T00:31:22.446763",
+  "return_date": "2026-09-17T00:35:10.123456",
+  "status": "returned"
 }
 ```
 
-### Usuario no encontrado — `GET /users/9999`
+### Préstamo ya devuelto — `PATCH /loans/{loan_id}/return`
 
-**Response — 404 Not Found:**
+**Response — 409 Conflict:**
 ```json
 {
-  "detail": "Usuario no encontrado"
+  "detail": "Este préstamo ya fue devuelto anteriormente"
 }
 ```
 
-### Correo duplicado — `POST /users`
+### Consulta con join — `GET /loans/details`
 
-**Response — 400 Bad Request:**
+**Response — 200 OK:**
 ```json
-{
-  "detail": "Ya existe un usuario con ese correo"
-}
-```
-
-### Actualización parcial sin datos — `PATCH /users/1`
-
-**Request:**
-```json
-{}
-```
-
-**Response — 400 Bad Request:**
-```json
-{
-  "detail": "No se enviaron campos para actualizar"
-}
+[
+  {
+    "loan_id": 1,
+    "status": "returned",
+    "loan_date": "2026-09-17T00:28:28.584970",
+    "return_date": "2026-09-17T00:32:24.451703",
+    "user": {
+      "id": 4,
+      "name": "Edwin Ospina",
+      "email": "edwino@example.com"
+    },
+    "device": {
+      "id": 1,
+      "name": "Laptop Lenovo ThinkPad",
+      "serial_number": "LEN-2024-001",
+      "device_type": "laptop"
+    }
+  }
+]
 ```
 
 ## Uso de Dependency Injection (`Depends()`)
 
 El proyecto reutiliza lógica común mediante dependencias definidas en `app/dependencies/`:
 
-- **`get_db`** (`database_dependency.py`): entrega una sesión de base de datos (`Session`) por cada request, y la cierra automáticamente al finalizar mediante `yield`/`finally`.
-- **`get_user_or_404`**: busca un usuario por `user_id` (tomado del path) usando la sesión de base de datos, y lanza `404` automáticamente si no existe. Se usa en `GET` por ID, `PUT`, `PATCH` y `DELETE`.
-- **`validate_email_unique_for_create`**: valida contra la base de datos que el correo no esté duplicado al crear un usuario (`POST`).
-- **`validate_email_unique_for_update`**: valida que el correo no esté duplicado al actualizar un usuario (`PUT`). Esta dependencia **depende a su vez de `get_user_or_404`**, formando una cadena de dependencias: FastAPI resuelve primero que el usuario exista, y luego valida el correo, sin duplicar la búsqueda del usuario en la base de datos.
+- **`get_user_or_404` / `get_device_or_404` / `get_loan_or_404`**: buscan un recurso por su ID y lanzan `404` automáticamente si no existe, antes de que la función del endpoint se ejecute.
+- **`validate_email_unique_for_create/update`**: valida que el correo no esté duplicado al crear o actualizar un usuario.
+- **`validate_serial_unique_for_create/update`**: valida que el número de serie no esté duplicado al crear o actualizar un dispositivo.
+- **`validate_loan_creation`**: valida, antes de crear un préstamo, que el usuario exista, el dispositivo exista y esté disponible.
+- **`validate_loan_not_returned`**: valida, antes de procesar una devolución, que el préstamo no haya sido devuelto previamente. Depende a su vez de `get_loan_or_404`, formando una cadena de dependencias.
 
 Este enfoque evita repetir la misma validación en múltiples endpoints, centraliza la lógica y hace el código más mantenible y fácil de probar.
 
@@ -269,13 +354,12 @@ Este enfoque evita repetir la misma validación en múltiples endpoints, central
 
 La API controla los siguientes escenarios usando `HTTPException`:
 
-- **Usuario no encontrado** → `404 Not Found`, mediante la dependencia `get_user_or_404`.
-- **Correo electrónico duplicado** → `400 Bad Request`, tanto al crear como al actualizar (validado contra la base de datos).
-- **Rol no permitido** → `422 Unprocessable Entity`, validado automáticamente por Pydantic mediante `RoleEnum` (cualquier valor fuera de `admin`, `support`, `user` es rechazado sin necesidad de código adicional).
+- **Usuario, dispositivo o préstamo no encontrado** → `404 Not Found`.
+- **Correo o número de serie duplicado** → `400 Bad Request`.
+- **Dispositivo no disponible para préstamo** → `409 Conflict`.
+- **Préstamo ya devuelto** → `409 Conflict`.
+- **Rol, estado o filtro fuera del enum permitido** → `422 Unprocessable Entity`, validado automáticamente por Pydantic (`RoleEnum`, `LoanStatus`).
 - **Actualización parcial sin datos** → `400 Bad Request`, cuando el body de un `PATCH` llega vacío.
-- **Eliminación de usuario inexistente** → `404 Not Found`, mediante la misma dependencia `get_user_or_404`.
-
-Adicionalmente, el modelo SQLAlchemy aplica sus propias restricciones de integridad (`nullable=False`, `unique=True` en la columna `email`) como última línea de defensa a nivel de base de datos, incluso si algún dato llegara a saltarse la validación de Pydantic.
 
 Todas las respuestas de error siguen el formato estándar de FastAPI:
 
@@ -287,92 +371,75 @@ Todas las respuestas de error siguen el formato estándar de FastAPI:
 
 ## Documentación automática
 
-FastAPI genera documentación interactiva automáticamente a partir de los modelos Pydantic y los metadatos configurados en `main.py` (título, descripción, versión, contacto y tags).
+FastAPI genera documentación interactiva automáticamente a partir de los modelos Pydantic (con ejemplos incluidos vía `examples=[...]`) y los metadatos configurados en `main.py`, organizada en tres tags: **Usuarios**, **Dispositivos** y **Préstamos**.
 
 - **Swagger UI**: `http://127.0.0.1:8000/docs`
 - **ReDoc**: `http://127.0.0.1:8000/redoc`
 
 ### Captura — Swagger UI
 
-![Swagger](/Imagenes/Swagger.png)
+![Swagger UI](/Imagenes/Swagger.png)
 
 ### Captura — ReDoc
 
-![reDoc](/Imagenes/reDoc.png)
+![ReDoc](Imagenes/Redoc.png)
 
 ## Evidencia de pruebas funcionales
 
-### POST /users — Crear usuario válido
+### Migraciones con Alembic
 
-![UsuarioNuevo](/Imagenes/UsuarioNuevo.png)
+![Historial de migraciones](/Imagenes/AlembicRelaciones/HistorialAlembic.png)
 
-### GET /users — Listar usuarios
+### Crear usuario — `POST /users`
 
-![ListaUsuarios](/Imagenes/ListaUsuarios.png)
+![Crear usuario](Imagenes/AlembicRelaciones/CrearUsuario.png)
 
-### GET /users/{user_id} — Consultar usuario por ID
+### Crear dispositivo — `POST /devices`
 
-![UsuarioID](/Imagenes/UsuarioID.png)
+![Crear dispositivo](Imagenes/AlembicRelaciones/CrearDispositivo.png)
 
-### GET /users?role=admin — Filtrar usuarios por rol
+### Crear préstamo — `POST /loans`
 
-![UsuarioRol](/Imagenes/UsuarioRol.png)
+![Crear préstamo](Imagenes/AlembicRelaciones/CrearPrestamo.png)
 
-### GET /users?is_active=true — Filtrar usuarios activos
+### Intentar prestar un dispositivo no disponible — `POST /loans`
 
-![UsuariosActivos](/Imagenes/UsuariosActivos.png)
+![Dispositivo no disponible](/Imagenes/AlembicRelaciones/PrestamoNoDisponible.png)
 
-### PUT /users/{user_id} — Actualización completa
+### Listar préstamos con información relacionada — `GET /loans/details`
 
-![ActualizacionUsuario](/Imagenes/ActualizacionUsuario.png)
+![Préstamos con join](/Imagenes/AlembicRelaciones/GetLoansDetails.png)
 
-### PATCH /users/{user_id} — Actualización parcial
+### Filtrar préstamos por estado — `GET /loans/details?status=active`
 
-![ActualizacionParcial](/Imagenes/ActualizacionUsuario.png)
+![Filtro por estado](/Imagenes/AlembicRelaciones/StatusActivo.png)
 
-### DELETE /users/{user_id} — Eliminar usuario
+### Filtrar préstamos por tipo de dispositivo — `GET /loans/details?device_type=laptop`
 
-![UsuarioEliminado](/Imagenes/UsuarioEliminado.png)
+![Filtro por tipo de dispositivo](Imagenes/AlembicRelaciones/LoansDetailsDeviceType.png)
 
-### Verificación de persistencia — Datos en SQLite Viewer
+### Consultar préstamos de un usuario — `GET /users/{user_id}/loans`
 
-![BaseDatos](/Imagenes/BaseDatos.png)
+![Préstamos por usuario](/Imagenes/AlembicRelaciones/PrestamoPorUsuario.png)
 
-## Evidencia de errores controlados
+### Devolución de préstamo — `PATCH /loans/{loan_id}/return`
 
-### 404 — Usuario no encontrado
+![Devolución exitosa](Imagenes/AlembicRelaciones/DevolucionPrestamo.png)
 
-![UsuarioNoEncontrado](/Imagenes/UsuarioNoEncontrado.png)
+### Intentar devolver un préstamo ya devuelto — `PATCH /loans/{loan_id}/return`
 
-### 400 — Correo duplicado
-
-![CorreoDuplicado](/Imagenes/CorreoRepetido.png)
-
-### 422 — Rol no permitido / datos inválidos
-
-![RolNoPermitido](/Imagenes/RolNoPermitido.png)
-
-### 400 — PATCH sin datos enviados
-
-![DatosVacios](/Imagenes/DatosVacios.png)
-
-### 404 — Eliminación de usuario inexistente
-
-![EliminacionUsuarioInexistente](/Imagenes/EliminarUsuarioInexistente.png)
-
-## Flujo de trabajo con Git
-
-Esta actividad se desarrolló en la rama `feature-sqlalchemy-crud`, creada a partir de `develop` (donde ya estaba mergeado el CRUD completo en memoria de la actividad anterior). Una vez finalizada y probada, esta rama se integró a `develop` mediante un Pull Request en GitHub, siguiendo el mismo flujo de trabajo por ramas utilizado en fases anteriores del proyecto.
+![Devolución ya realizada](Imagenes/AlembicRelaciones/DevolucionYaRealizada.png)
 
 ## Reflexión final
+Esta actividad me ayudó a entender que una API no es solo crear endpoints, sino pensar bien cómo se relacionan los datos entre sí. Al principio me costó entender la diferencia entre ForeignKey() y relationship(): el primero es lo que realmente conecta las tablas en la base de datos, y el segundo es lo que me permite acceder a esos datos relacionados desde Python de forma más fácil, sin escribir el JOIN a mano cada vez.
 
-Uno de los aprendizajes más grandes de esta fase fue comprender la diferencia real entre un **modelo SQLAlchemy** y un **schema Pydantic**. Al principio parecía redundante tener dos representaciones distintas del mismo "usuario", pero al implementar el CRUD completo quedó claro el propósito de cada una: el modelo SQLAlchemy define cómo se almacenan los datos y garantiza su integridad a nivel de base de datos (constraints como `unique=True` o `nullable=False`), mientras que los schemas Pydantic controlan qué información entra y sale por la API, con sus propias reglas de negocio (como el `RoleEnum` o el formato de email). Tener ambas capas separadas permitió, por ejemplo, exponer un `UserResponse` con exactamente los campos que quiero mostrar, sin acoplar la respuesta de la API a la estructura interna de la tabla.
+Trabajar con Alembic también fue nuevo para mí. Antes simplemente dejaba que SQLAlchemy creara las tablas automáticamente, pero ahora entiendo que eso no queda documentado en ningún lado. Con Alembic cada cambio en la base de datos queda guardado en un archivo, y puedo ver el historial con alembic history o revisar exactamente qué se va a modificar antes de aplicar los cambios con upgrade head. Me pareció importante aprender que siempre hay que revisar la migración generada antes de aplicarla, y no hacerlo a ciegas.
 
-La separación en capas (`database`, `models`, `schemas`, `services`, `dependencies`, `routes`) también se sintió más natural en esta fase que en la anterior: al agregar la base de datos, quedó evidente por qué cada capa existe — `services` concentra toda la lógica de consultas SQLAlchemy, `dependencies` reutiliza validaciones como `get_user_or_404` y la gestión de sesiones (`get_db`), y `routes` queda enfocado únicamente en la definición de endpoints y códigos de estado, sin lógica de negocio mezclada.
+La parte de los joins fue la que más trabajo me costó entender al principio, pero también la que más me gustó. Ver cómo con una sola consulta podía traer el préstamo junto con los datos del usuario y del dispositivo, en vez de hacer varias consultas separadas, me hizo ver la utilidad real de usar bien un ORM.
 
-En cuanto a la importancia de la persistencia en sí: pasar de una lista de Python en memoria a un archivo real de base de datos (`device_systems.db`) cambia por completo el comportamiento de la API. Antes, cada reinicio del servidor borraba todos los datos; ahora, los usuarios creados sobreviven a reinicios del servidor e incluso a cerrar por completo el entorno de desarrollo, que es justamente el comportamiento que se espera de una API real en producción. Verificar esto directamente en la base de datos (con la extensión SQLite Viewer) fue clave para confirmar que no se trataba solo de respuestas JSON convincentes en Swagger, sino de datos realmente persistidos.
+Tuve algunos errores en el camino, casi todos por descuido: imports duplicados, una función repetida sin darme cuenta, y una vez se me olvidó poner un return en un endpoint, lo cual me generó un error que no entendía hasta que revisé el traceback completo en la terminal. Eso me enseñó a leer con más calma el código antes de guardarlo, y a no quedarme solo con el mensaje de error de Swagger, sino ir a ver el detalle en la consola.
 
-Si continuara evolucionando esta API, el siguiente paso lógico sería migrar de SQLite a PostgreSQL para un entorno de producción (cambiando únicamente la `DATABASE_URL`, gracias a que SQLAlchemy abstrae el motor de base de datos), incorporar Alembic para gestionar migraciones de esquema de forma versionada, y agregar autenticación (hash de contraseñas, JWT) para proteger los endpoints de escritura.
+Si siguiera mejorando esta API, me gustaría agregarle autenticación para que no cualquiera pueda usar los endpoints, y aprender a hacer pruebas automáticas en vez de probar todo manualmente en Swagger cada vez.
 
 ## Autor
 

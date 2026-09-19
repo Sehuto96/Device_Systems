@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
+from app.routes import device_routes, loan_routes, user_routes
 from app.database.connection import create_tables
-from app.routes import user_routes
+from app.routes import device_routes, user_routes
 
 
 @asynccontextmanager
@@ -25,11 +25,21 @@ app = FastAPI(
         "name": "Sebastian Hurtado",
         "url": "https://github.com/Sehuto96/Device_Systems",
     },
-    openapi_tags=[
+        openapi_tags=[
         {
             "name": "Usuarios",
             "description": "Operaciones sobre el recurso de usuarios: creación, consulta, "
                             "actualización y eliminación, con persistencia en base de datos.",
+        },
+        {
+            "name": "Dispositivos",
+            "description": "Operaciones sobre el recurso de dispositivos: creación, consulta, "
+                            "actualización, eliminación y filtros por tipo, marca y disponibilidad.",
+        },
+        {
+            "name": "Préstamos",
+            "description": "Gestión de préstamos de dispositivos: creación, consulta, "
+                            "devolución y filtros por estado, usuario o dispositivo.",
         },
     ],
     lifespan=lifespan,
@@ -45,6 +55,8 @@ async def add_custom_headers(request, call_next):
 
 
 app.include_router(user_routes.router)
+app.include_router(device_routes.router)
+app.include_router(loan_routes.router)
 
 
 @app.get("/", tags=["Root"], summary="Endpoint raíz", description="Mensaje de bienvenida de la API.")

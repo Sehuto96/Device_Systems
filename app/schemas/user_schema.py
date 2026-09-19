@@ -19,35 +19,35 @@ class RoleEnum(str, Enum):
 
 # ---------- Schema para CREAR usuario ----------
 class UserCreate(BaseModel):
-    name: str = Field(min_length=3, max_length=100)
-    email: EmailStr
-    role: RoleEnum
-    is_active: bool = True
+    name: str = Field(min_length=3, max_length=100, examples=["Ana Pérez"])
+    email: EmailStr = Field(examples=["ana@sena.edu.co"])
+    role: RoleEnum = Field(examples=["user"])
+    is_active: bool = Field(default=True, examples=[True])
 
 
 # ---------- Schema para ACTUALIZAR usuario completo (PUT) ----------
 class UserUpdate(BaseModel):
-    name: str = Field(min_length=3, max_length=100)
-    email: EmailStr
-    role: RoleEnum
-    is_active: bool = True
+    name: str = Field(min_length=3, max_length=100, examples=["Ana Pérez"])
+    email: EmailStr = Field(examples=["ana@sena.edu.co"])
+    role: RoleEnum = Field(examples=["user"])
+    is_active: bool = Field(default=True, examples=[True])
 
 
 # ---------- Schema para ACTUALIZAR usuario parcial (PATCH) ----------
 class UserPatch(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=3, max_length=100)
-    email: Optional[EmailStr] = None
-    role: Optional[RoleEnum] = None
-    is_active: Optional[bool] = None
+    name: Optional[str] = Field(default=None, min_length=3, max_length=100, examples=["Ana Pérez"])
+    email: Optional[EmailStr] = Field(default=None, examples=["ana@sena.edu.co"])
+    role: Optional[RoleEnum] = Field(default=None, examples=["support"])
+    is_active: Optional[bool] = Field(default=None, examples=[False])
 
 
 # ---------- Schema de RESPUESTA ----------
 class UserResponse(BaseModel):
-    id: int
-    name: str
-    email: EmailStr
-    role: RoleEnum
-    is_active: bool
-    created_at: datetime
+    id: int = Field(examples=[1])
+    name: str = Field(examples=["Ana Pérez"])
+    email: EmailStr = Field(examples=["ana@sena.edu.co"])
+    role: RoleEnum = Field(examples=["user"])
+    is_active: bool = Field(examples=[True])
+    created_at: datetime = Field(examples=["2026-09-17T00:28:28.584970"])
 
     model_config = ConfigDict(from_attributes=True)

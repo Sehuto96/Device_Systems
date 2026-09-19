@@ -5,7 +5,8 @@ a la capa de servicios (user_service).
 """
 
 from typing import Optional
-
+from app.schemas.loan_schema import LoanResponse  
+from app.services import loan_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,7 @@ router = APIRouter(prefix="/users", tags=["Usuarios"])
     response_model=list[UserResponse],
     summary="Listar usuarios",
     description="Lista usuarios con filtros opcionales por rol y estado, y ordenamiento.",
+    response_description="Lista de usuarios que cumplen con los filtros aplicados.",
 )
 def list_users(
     role: Optional[RoleEnum] = Query(default=None, description="Filtrar por rol"),
@@ -50,17 +52,28 @@ def list_users(
     "/{user_id}",
     response_model=UserResponse,
     summary="Consultar usuario por ID",
+    response_description="Datos del usuario solicitado.",
     responses={404: {"description": "Usuario no encontrado"}},
 )
 def get_user(db_user: User = Depends(get_user_or_404)):
     return db_user
 
+@router.get(
+    "/{user_id}/loans",
+    response_model=list[LoanResponse],
+    summary="Consultar préstamos de un usuario",
+    response_description="Lista de préstamos asociados al usuario, activos e históricos.",
+    responses={404: {"description": "Usuario no encontrado"}},
+)
+def get_user_loans(db_user: User = Depends(get_user_or_404), db: Session = Depends(get_db)):
+    return loan_service.get_loans_by_user(db, db_user.id)
 
 @router.post(
     "",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Crear usuario",
+    response_description="Usuario creado exitosamente, con su ID asignado por la base de datos.",
     responses={400: {"description": "Correo ya registrado"}},
 )
 def create_user(
@@ -74,6 +87,7 @@ def create_user(
     "/{user_id}",
     response_model=UserResponse,
     summary="Actualizar usuario completo",
+    response_description="Usuario actualizado con todos sus campos reemplazados.",
     responses={
         404: {"description": "Usuario no encontrado"},
         400: {"description": "Correo ya registrado por otro usuario"},
@@ -91,6 +105,7 @@ def update_user(
     "/{user_id}",
     response_model=UserResponse,
     summary="Actualizar usuario parcial",
+    response_description="Usuario actualizado con los campos enviados.",
     responses={404: {"description": "Usuario no encontrado"}},
 )
 def patch_user(
@@ -119,6 +134,7 @@ def patch_user(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Eliminar usuario",
+    response_description="Usuario eliminado; no se retorna contenido.",
     responses={404: {"description": "Usuario no encontrado"}},
 )
 def delete_user(

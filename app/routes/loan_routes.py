@@ -14,32 +14,37 @@ from app.dependencies.loan_dependencies import (
     validate_loan_creation,
     validate_loan_not_returned,
 )
+from app.dependencies.auth_dependency import get_current_active_user, require_roles
 from app.models.loan_model import Loan
 from app.schemas.loan_schema import LoanCreate, LoanDetailResponse, LoanResponse, LoanStatus
 from app.services import loan_service
+from fastapi import Request  # agregar al import existente
+from app.middlewares.rate_limiter import limiter
 
 router = APIRouter(prefix="/loans", tags=["Préstamos"])
 
 
-@router.get(
+@router.post(
     "",
-    response_model=list[LoanResponse],
-    summary="Listar préstamos",
-    description="Lista préstamos con filtros opcionales por estado, usuario o dispositivo.",
-    response_description="Lista de préstamos que cumplen con los filtros aplicados.",
+    response_model=LoanResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear préstamo",
+    description="Crea un préstamo, validando que el usuario y el dispositivo existan "
+    "y que el dispositivo esté disponible. Marca el dispositivo como no disponible.",
+    response_description="Préstamo creado con estado 'active'; el dispositivo queda marcado como no disponible.",
+    responses={
+        404: {"description": "Usuario o dispositivo no encontrado"},
+        409: {"description": "El dispositivo no está disponible"},
+    },
 )
-def list_loans(
-    status_filter: Optional[LoanStatus] = Query(
-        default=None, alias="status", description="Filtrar por estado del préstamo"
-    ),
-    user_id: Optional[int] = Query(default=None, description="Filtrar por usuario"),
-    device_id: Optional[int] = Query(default=None, description="Filtrar por dispositivo"),
+@limiter.limit("10/minute")
+def create_loan(
+    request: Request,
+    loan_data: LoanCreate = Depends(validate_loan_creation),
     db: Session = Depends(get_db),
+    _: object = Depends(get_current_active_user),
 ):
-    status_value = status_filter.value if status_filter is not None else None
-    return loan_service.get_all_loans(
-        db, status_filter=status_value, user_id=user_id, device_id=device_id
-    )
+    return loan_service.create_loan(db, loan_data)
 
 
 @router.get(
@@ -58,14 +63,13 @@ def list_loans_with_details(
     user_email: Optional[str] = Query(default=None, description="Filtrar por correo del usuario"),
     device_type: Optional[str] = Query(default=None, description="Filtrar por tipo de dispositivo"),
     db: Session = Depends(get_db),
+    _: object = Depends(require_roles("admin", "support")),
 ):
     status_value = status_filter.value if status_filter is not None else None
     return loan_service.get_all_loans_with_details(
         db, status_filter=status_value, user_email=user_email, device_type=device_type
     )
     
-
-
 @router.get(
     "/{loan_id}",
     response_model=LoanResponse,
@@ -75,26 +79,6 @@ def list_loans_with_details(
 )
 def get_loan(db_loan: Loan = Depends(get_loan_or_404)):
     return db_loan
-
-
-@router.post(
-    "",
-    response_model=LoanResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Crear préstamo",
-    description="Crea un préstamo, validando que el usuario y el dispositivo existan "
-    "y que el dispositivo esté disponible. Marca el dispositivo como no disponible.",
-    response_description="Préstamo creado con estado 'active'; el dispositivo queda marcado como no disponible.",
-    responses={
-        404: {"description": "Usuario o dispositivo no encontrado"},
-        409: {"description": "El dispositivo no está disponible"},
-    },
-)
-def create_loan(
-    loan_data: LoanCreate = Depends(validate_loan_creation),
-    db: Session = Depends(get_db),
-):
-    return loan_service.create_loan(db, loan_data)
 
 
 @router.patch(
@@ -112,5 +96,6 @@ def create_loan(
 def return_loan(
     db_loan: Loan = Depends(validate_loan_not_returned),
     db: Session = Depends(get_db),
+    _: object = Depends(require_roles("admin", "support")),
 ):
     return loan_service.return_loan(db, db_loan)

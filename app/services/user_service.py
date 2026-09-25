@@ -9,21 +9,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.user_model import User
-from app.schemas.user_schema import UserCreate, UserPatch, UserUpdate
-
-
-def create_user(db: Session, user_data: UserCreate) -> User:
-    """Crea un nuevo usuario en la base de datos."""
-    db_user = User(
-        name=user_data.name,
-        email=user_data.email,
-        role=user_data.role.value,
-        is_active=user_data.is_active,
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+from app.schemas.user_schema import UserPatch, UserUpdate
 
 
 def get_all_users(

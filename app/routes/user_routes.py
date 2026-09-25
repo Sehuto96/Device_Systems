@@ -9,21 +9,23 @@ from app.schemas.loan_schema import LoanResponse
 from app.services import loan_service
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-
+from fastapi import Request  # agregar al import existente
+from app.middlewares.rate_limiter import limiter
 from app.dependencies.database_dependency import get_db
 from app.dependencies.user_dependencies import (
     get_user_or_404,
-    validate_email_unique_for_create,
     validate_email_unique_for_update,
+    
 )
+from app.dependencies.auth_dependency import get_current_active_user
 from app.models.user_model import User
 from app.schemas.user_schema import (
     RoleEnum,
-    UserCreate,
     UserPatch,
     UserResponse,
     UserUpdate,
 )
+    
 from app.services import user_service
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
@@ -36,13 +38,16 @@ router = APIRouter(prefix="/users", tags=["Usuarios"])
     description="Lista usuarios con filtros opcionales por rol y estado, y ordenamiento.",
     response_description="Lista de usuarios que cumplen con los filtros aplicados.",
 )
+@limiter.limit("30/minute")
 def list_users(
+    request: Request,
     role: Optional[RoleEnum] = Query(default=None, description="Filtrar por rol"),
     is_active: Optional[bool] = Query(default=None, description="Filtrar por estado activo"),
     order_by: Optional[str] = Query(
         default=None, description="Ordenar por 'name' o 'created_at'"
     ),
     db: Session = Depends(get_db),
+    _: User = Depends(get_current_active_user),
 ):
     role_value = role.value if role is not None else None
     return user_service.get_all_users(db, role=role_value, is_active=is_active, order_by=order_by)
@@ -55,7 +60,10 @@ def list_users(
     response_description="Datos del usuario solicitado.",
     responses={404: {"description": "Usuario no encontrado"}},
 )
-def get_user(db_user: User = Depends(get_user_or_404)):
+def get_user(
+    db_user: User = Depends(get_user_or_404),
+    _: User = Depends(get_current_active_user),
+):
     return db_user
 
 @router.get(
@@ -67,21 +75,6 @@ def get_user(db_user: User = Depends(get_user_or_404)):
 )
 def get_user_loans(db_user: User = Depends(get_user_or_404), db: Session = Depends(get_db)):
     return loan_service.get_loans_by_user(db, db_user.id)
-
-@router.post(
-    "",
-    response_model=UserResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Crear usuario",
-    response_description="Usuario creado exitosamente, con su ID asignado por la base de datos.",
-    responses={400: {"description": "Correo ya registrado"}},
-)
-def create_user(
-    user_data: UserCreate = Depends(validate_email_unique_for_create),
-    db: Session = Depends(get_db),
-):
-    return user_service.create_user(db, user_data)
-
 
 @router.put(
     "/{user_id}",

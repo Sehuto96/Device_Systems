@@ -14,6 +14,7 @@ from app.dependencies.device_dependencies import (
     validate_serial_unique_for_create,
     validate_serial_unique_for_update,
 )
+from app.dependencies.auth_dependency import require_admin, require_roles
 from app.models.device_model import Device
 from app.schemas.device_schema import (
     DeviceCreate,
@@ -79,6 +80,7 @@ def get_device_loans(db_device: Device = Depends(get_device_or_404), db: Session
 def create_device(
     device_data: DeviceCreate = Depends(validate_serial_unique_for_create),
     db: Session = Depends(get_db),
+    _: object = Depends(require_roles("admin", "support")),
 ):
     return device_service.create_device(db, device_data)
 
@@ -96,6 +98,7 @@ def create_device(
 def update_device(
     data=Depends(validate_serial_unique_for_update),
     db: Session = Depends(get_db),
+    _: object = Depends(require_roles("admin", "support")),
 ):
     device_data, db_device = data
     return device_service.update_device_full(db, db_device, device_data)
@@ -140,6 +143,7 @@ def patch_device(
 def delete_device(
     db_device: Device = Depends(get_device_or_404),
     db: Session = Depends(get_db),
+    _: object = Depends(require_admin),
 ):
     device_service.delete_device(db, db_device)
     return None
